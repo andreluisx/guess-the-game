@@ -1,13 +1,63 @@
+// Função para limpar e normalizar texto
+const normalizeText = (text) => {
+  return text
+    .toLowerCase()
+    .normalize('NFD') // Decompõe os caracteres acentuados
+    .replace(/[\u0300-\u036f]/g, '') // Remove os diacríticos (acentos)
+    .replace(/[:\-–—]/g, '') // Remove dois pontos e hífens
+    .replace(/\s+/g, ' ') // Substitui múltiplos espaços por um só
+    .trim();
+};
 
-//  const initialState = {
-//    totalHearts: screenshots.slice(0, MAX_SCREENSHOTS).length,
-//    responsesHistory: ['League of Legends', 'Zelda', 'Batman Arkhan City'],
-//    input: '',
-//    hearts: screenshots.slice(0, MAX_SCREENSHOTS).length,
-//    images: screenshots.slice(0, MAX_SCREENSHOTS),
-//    game,
-//    tips: {}
-//  }
+// Função para extrair a parte principal do nome
+const getMainGameName = (gameName) => {
+  // Verifica se tem dois pontos ou números
+  const colonMatch = gameName.match(/^([^:]+)/);
+  const numberMatch = gameName.match(/^([^0-9]+)/);
+  
+  if (colonMatch && colonMatch[1].trim() !== gameName.trim()) {
+    return colonMatch[1].trim(); // Retorna parte antes dos dois pontos
+  }
+  
+  if (numberMatch && numberMatch[1].trim() !== gameName.trim()) {
+    return numberMatch[1].trim(); // Retorna parte antes dos números
+  }
+  
+  return gameName; // Retorna nome completo se não encontrar separadores
+};
+
+// Função para verificar se pelo menos 2 palavras coincidem (para nomes sem separadores)
+const checkPartialMatch = (gameName, userInput) => {
+  const gameWords = normalizeText(gameName).split(' ').filter(word => word.length > 2);
+  const inputWords = normalizeText(userInput).split(' ').filter(word => word.length > 2);
+  
+  let matches = 0;
+  
+  gameWords.forEach(gameWord => {
+    if (inputWords.some(inputWord => 
+      inputWord === gameWord || 
+      gameWord.includes(inputWord) || 
+      inputWord.includes(gameWord)
+    )) {
+      matches++;
+    }
+  });
+  
+  return matches >= 2;
+};
+
+// Verificação principal
+const checkGameAnswer = (gameName, userInput) => {
+  const mainName = getMainGameName(gameName);
+  
+  // Se o nome principal é diferente do original, usa match exato no nome principal
+  if (mainName !== gameName) {
+    return normalizeText(mainName) === normalizeText(userInput);
+  }
+  
+  // Se não tem separadores, usa regra das 2 palavras
+  return checkPartialMatch(gameName, userInput) || normalizeText(gameName) === normalizeText(userInput);
+};
 
 export function gameReducer(state, action) {
   switch (action.type) {
@@ -16,8 +66,8 @@ export function gameReducer(state, action) {
     case 'SUBMIT':
       if (state.input !== '' && state.hearts >= 0 && state.imageNumber < state.totalHearts) {
         
-        if (state.game.name.toLowerCase().trim().replace(' ', '') === state.input.toLowerCase().trim().replace(' ', '')) {
-          return { ...state, win: true, imageNumber: state.totalHearts }
+        if (checkGameAnswer(state.game.name, state.input)) {
+          return { ...state, win: true, imageNumber: state.totalHearts };
         }
         
         if (state.hearts > 1) {
@@ -48,6 +98,7 @@ export function gameReducer(state, action) {
         }
       }
 
+      return state;
 
     default:
       return state;

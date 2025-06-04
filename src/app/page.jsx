@@ -1,93 +1,9 @@
-"use client";
-import { screenshots } from "../fake_data/game";
-import { game } from "../fake_data/game";
-import { useEffect, useReducer, useState } from "react";
-
-import generateHintPairs from "../utils/setTips";
-import { gameReducer } from "../reducer/gameReducer";
-import { modalReducer } from "../reducer/modalReducer";
-
-// Para renderizar na tela
-import RenderResultModal from "../components/page/RenderResultModal";
-import RenderTipsModal from "../components/page/RenderTipsModal";
-import RenderSurrenderModal from "../components/page/SurrenderModal";
-//Conteudos Principais do game
-import PrincipalContent from "../components/page/PrincipalContent";
-import RightContent from "../components/page/RightContent";
-import LeftContent from "../components/page/LeftContent";
+import ClientGame from "../components/screens/ClientGame";
 
 const MAX_SCREENSHOTS = 6;
 
-export default function App() {
-  const initialState = {
-    totalHearts: screenshots.slice(0, MAX_SCREENSHOTS).length,
-    responsesHistory: [],
-    input: "",
-    hearts: screenshots.slice(0, MAX_SCREENSHOTS).length,
-    images: screenshots.slice(0, MAX_SCREENSHOTS),
-    imageNumber: 0,
-    game,
-    tips: generateHintPairs(game, 4),
-    points: 100,
-    lose: false,
-    win: false,
-  };
-  const modalsStates = {
-    tipModal: false,
-    resultModal: false,
-    surrenderModal: false,
-  };
-  const [state, dispatch] = useReducer(gameReducer, initialState);
-  const [modals, dispatchModal] = useReducer(modalReducer, modalsStates);
-  const [isHovered, setIsHovered] = useState(false);
-  const [tipOppened, setTipOppened] = useState([]);
-
-  useEffect(() => {
-    if ((state.win || state.lose) && !modals.resultModal) {
-      dispatchModal({ type: "RESULT_MODAL" });
-    }
-  }, [state.win, state.lose]);
-
-  return (
-    <div className="bg-[url('/images/kratos.jpg')] bg-scroll sm:bg-fixed bg-cover bg-center w-full h-screen">
-      {/* div para escurecer o fundo */}
-      <div className="z-20 absolute h-full w-full bg-black/80"></div>
-
-      {/* Todos os Modais (Modal) */}
-      {modals.tipModal && RenderTipsModal(tipOppened, dispatchModal)}
-      {modals.surrenderModal && RenderSurrenderModal(dispatch, dispatchModal)}
-      {modals.resultModal && RenderResultModal(state, dispatchModal)}
-
-      <div className="flex flex-col justify-center px-6 lg:px-0">
-        {/* Header do site */}
-        <div className="py-4 z-30 flex flex-row justify-center gap-2">
-          <h1
-            style={{ fontFamily: "Roboto-ExtraBold" }}
-            className="text-center z-30 text-3xl"
-          >
-            <span className="text-red-700">GUESS</span> the{" "}
-            <span className="text-red-700">GAME</span>{" "}
-          </h1>
-        </div>
-        {/* div que envolve tudo */}
-        <div className="flex md:flex-row flex-col">
-          {/* Conteúdo da esquerda / invisivel no celular */}
-          <LeftContent/>
-
-          {/* Conteúdo central / Primeiro (celular) */}
-          <PrincipalContent state={state} isHovered={isHovered} setIsHovered={setIsHovered} dispatch={dispatch} dispatchModal={dispatchModal}/>
-          
-          {/* Conteúdo direita / Ultimo (celular) */}
-          <RightContent state={state} dispatch={dispatch} setTipOppened={setTipOppened} dispatchModal={dispatchModal} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export async function getServerSideProps() {
+async function getData() {
   try {
-    // 1. Buscar jogos famosos
     const gamesResponse = await fetch("https://api.igdb.com/v4/games", {
       method: "POST",
       headers: {
@@ -96,54 +12,93 @@ export async function getServerSideProps() {
         Authorization: `Bearer ${process.env.TOKEN}`,
       },
       body: `
-        fields id, name, summary, storyline, rating, genres.name, cover.url, screenshots.image_id,
-               involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
-               first_release_date, platforms.name, game_modes.name, player_perspectives.name,
-               themes.name, keywords.name, franchises.name, collection.name, external_games.category, external_games.url;
-        where rating >= 75 & rating_count >= 100 & category = 0;
-        limit 500;
-      `,
+    fields id, name, summary, storyline, rating, genres.name, cover.url, screenshots.image_id,
+           involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
+           first_release_date, platforms.name, game_modes.name, player_perspectives.name,
+           themes.name, keywords.name, franchises.name, collection.name, external_games.category, external_games.url;
+    where rating >= 85 & rating_count >= 200 & first_release_date > 946684800;
+    sort follows desc;
+    limit 300;
+  `,
+      cache: "no-store",
     });
 
     const games = await gamesResponse.json();
     if (!games || games.length === 0) throw new Error("Nenhum jogo encontrado");
 
-    // 2. Selecionar aleatoriamente
-    const randomIndex = Math.floor(Math.random() * games.length);
-    const selectedGame = games[randomIndex];
+    // Melhor seleção aleatória com peso para jogos mais populares
+    const selectRandomGame = (games) => {
+      // Ordenar por popularidade (follows) e criar pesos
+      const sortedGames = games.sort(
+        (a, b) => (b.follows || 0) - (a.follows || 0)
+      );
 
-    // 3. Buscar screenshots específicas
-    const screenshotsResponse = await fetch("https://api.igdb.com/v4/screenshots", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Client-ID": process.env.CLIENT_ID,
-        Authorization: `Bearer ${process.env.TOKEN}`,
-      },
-      body: `
+      // Criar distribuição com peso: jogos mais populares têm mais chance
+      const weights = [];
+      for (let i = 0; i < sortedGames.length; i++) {
+        // Peso decrescente: primeiros 50 jogos têm peso 3, próximos 100 peso 2, resto peso 1
+        const weight = i < 50 ? 3 : i < 150 ? 2 : 1;
+        for (let j = 0; j < weight; j++) {
+          weights.push(i);
+        }
+      }
+
+      const randomWeightedIndex =
+        weights[Math.floor(Math.random() * weights.length)];
+      return sortedGames[randomWeightedIndex];
+    };
+
+    const selectedGame = selectRandomGame(games);
+
+    const screenshotsResponse = await fetch(
+      "https://api.igdb.com/v4/screenshots",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Client-ID": process.env.CLIENT_ID,
+          Authorization: `Bearer ${process.env.TOKEN}`,
+        },
+        body: `
         fields image_id,url,width,height;
         where game = ${selectedGame.id};
         limit 10;
       `,
-    });
+        cache: "no-store",
+      }
+    );
 
     const screenshots = await screenshotsResponse.json();
 
     return {
-      props: {
-        game: selectedGame,
-        screenshots,
-        timestamp: Date.now(),
-      },
+      game: selectedGame,
+      screenshots,
     };
   } catch (err) {
     console.error("Erro ao buscar jogo:", err);
     return {
-      props: {
-        game: null,
-        screenshots: [],
-        timestamp: Date.now(),
-      },
+      game: null,
+      screenshots: [],
     };
   }
+}
+
+export default async function GuessGamePage() {
+  const { game, screenshots } = await getData();
+
+  if (!game || screenshots.length === 0) {
+    return (
+      <div className="text-white text-center mt-10">
+        Erro ao carregar o jogo
+      </div>
+    );
+  }
+  console.log(game);
+  // Como isso é server-side, você precisa passar isso como prop para um Client Component.
+  return (
+    <ClientGame
+      game={game}
+      screenshots={screenshots.slice(0, MAX_SCREENSHOTS)}
+    />
+  );
 }

@@ -35,7 +35,7 @@ export default function RenderResultModal( state, dispatchModal ) {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Seção da capa do jogo */}
           {state.game.cover && (
-            <div className="lg:w-1/3 flex justify-center items-center lg:justify-start">
+            <div className="lg:w-1/3 flex justify-start items-center lg:justify-center">
               <div className="relative">
                 <Image
                   src={`https:${state.game.cover.url.replace(
